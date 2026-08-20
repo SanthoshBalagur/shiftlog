@@ -98,10 +98,8 @@ class ShiftBase(SQLModel):
     @classmethod
     def end_start_delta(cls, end_time: datetime, info):
         start_time = info.data.get("start_time")
-        if start_time is not None and (
-            ((end_time - start_time) > timedelta(hours=24))
-            or ((end_time - start_time) < timedelta(minutes=30))
-        ):
+        if start_time is not None and (((end_time - start_time) > datetime.timedelta(hours=24))or
+                                       ((end_time - start_time) < datetime.timedelta(minutes=30))):
             raise ValueError("A shift must last at least 30 minutes and no more than 24 hours.")
         return end_time
 
@@ -129,6 +127,10 @@ class ShiftRead(ShiftBase):
 class ShiftConflictGroup(SQLModel):
     worker_id: int
     conflicting_shifts: list[ShiftRead]
+
+
+class ShiftUpdate(ShiftBase):
+    pass
 
 
 class WorkerSummary(SQLModel):

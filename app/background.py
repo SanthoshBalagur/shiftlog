@@ -60,7 +60,6 @@ def get_upcoming_shifts(
     return list(session.exec(statement).all())
 
 
-
 async def upcoming_shifts_loop(
     interval_seconds: int = DEFAULT_INTERVAL_SECONDS,
     lookahead_minutes: int = DEFAULT_LOOKAHEAD_MINUTES,

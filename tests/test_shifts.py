@@ -203,6 +203,79 @@ def test_shift_duration(client: TestClient, worker_id: int):
     assert data["duration_hours"] == 8.0
 
 
+def test_update_shift(client: TestClient, worker_id: int):
+    # Create shift
+    create = client.post(
+        "/shifts",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T09:00:00",
+            "end_time": "2026-08-10T17:00:00",
+        },
+    )
+    shift_id = create.json()["id"]
+
+    # Update shift
+    update_res = client.put(
+        f"/shifts/{shift_id}",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T10:00:00",
+            "end_time": "2026-08-10T18:00:00",
+        },
+    )
+    assert update_res.status_code == 200
+    body = update_res.json()
+    assert body["start_time"] == "2026-08-10T10:00:00"
+    assert body["end_time"] == "2026-08-10T18:00:00"
+
+
+def test_update_shift_not_found(client: TestClient, worker_id: int):
+    response = client.put(
+        "/shifts/9999",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T10:00:00",
+            "end_time": "2026-08-10T18:00:00",
+        },
+    )
+    assert response.status_code == 404
+
+
+def test_update_shift_conflict(client: TestClient, worker_id: int):
+    # Shift 1: 09:00 - 12:00
+    shift1 = client.post(
+        "/shifts",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T09:00:00",
+            "end_time": "2026-08-10T12:00:00",
+        },
+    ).json()
+
+    # Shift 2: 13:00 - 17:00
+    shift2 = client.post(
+        "/shifts",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T13:00:00",
+            "end_time": "2026-08-10T17:00:00",
+        },
+    ).json()
+
+    # Try updating shift 2 to overlap with shift 1 (11:00 - 15:00)
+    response = client.put(
+        f"/shifts/{shift2['id']}",
+        json={
+            "worker_id": worker_id,
+            "start_time": "2026-08-10T11:00:00",
+            "end_time": "2026-08-10T15:00:00",
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == f"Shift conflicts with existing shift(s) for this worker: {shift1['id']}"
+
+
 def test_create_shift_with_notes(client: TestClient, worker_id: int):
     notes = "Covering for Alex"
     response = client.post(
@@ -214,7 +287,6 @@ def test_create_shift_with_notes(client: TestClient, worker_id: int):
             "notes": notes,
         },
     )
-
     assert response.status_code == 201
     body = response.json()
     assert body["notes"] == notes
@@ -224,9 +296,7 @@ def test_create_shift_with_notes(client: TestClient, worker_id: int):
     assert get_response.json()["notes"] == notes
 
 
-def test_create_shift_without_notes(
-    client: TestClient, worker_id: int
-):
+def test_create_shift_without_notes(client: TestClient, worker_id: int):
     response = client.post(
         "/shifts",
         json={
@@ -235,7 +305,6 @@ def test_create_shift_without_notes(
             "end_time": "2026-08-10T17:00:00",
         },
     )
-
     assert response.status_code == 201
     assert response.json()["notes"] is None
 
@@ -252,7 +321,6 @@ def test_create_shift_rejects_notes_over_max_length(
             "notes": "x" * 301,
         },
     )
-
     assert response.status_code == 422
 
 
@@ -417,8 +485,12 @@ def test_shifts_today_excludes_shift_starting_tomorrow(
     assert shift_id not in ids
 
 
-def test_shifts_today_excludes_shift_starting_yesterday_past_midnight(client: TestClient, worker_id: int):
-    yesterday_10pm=datetime.now(timezone.utc).replace(hour=22, minute=0, second=0, microsecond=0) - timedelta(days=1)
+def test_shifts_today_excludes_shift_starting_yesterday_past_midnight(
+    client: TestClient, worker_id: int
+):
+    yesterday_10pm = datetime.now(timezone.utc).replace(
+        hour=22, minute=0, second=0, microsecond=0
+    ) - timedelta(days=1)
 
     create_res = client.post(
         "/shifts",

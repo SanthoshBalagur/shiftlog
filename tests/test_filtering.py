@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 
-
 def _create_shift(client: TestClient, worker_id: int, start: str, end: str):
     response = client.post(
         "/shifts",

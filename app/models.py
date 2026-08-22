@@ -6,7 +6,7 @@ are the DB models, and the *Create/*Read classes are what the API actually
 accepts and returns.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 
 from pydantic import computed_field, field_validator
@@ -23,22 +23,22 @@ class UtcDateTime(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is not None and isinstance(value, datetime):
             if value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
+                value = value.replace(tzinfo=UTC)
             else:
-                value = value.astimezone(timezone.utc)
+                value = value.astimezone(UTC)
         return value
 
     def process_result_value(self, value, dialect):
         if value is not None and isinstance(value, datetime):
             if value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
+                value = value.replace(tzinfo=UTC)
             else:
-                value = value.astimezone(timezone.utc)
+                value = value.astimezone(UTC)
         return value
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class WorkerBase(SQLModel):
@@ -89,8 +89,8 @@ class ShiftBase(SQLModel):
     @classmethod
     def ensure_utc(cls, dt: datetime) -> datetime:
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
 
     @field_validator("end_time")
     @classmethod
@@ -106,16 +106,16 @@ class ShiftBase(SQLModel):
     @classmethod
     def end_start_delta(cls, end_time: datetime, info):
         start_time = info.data.get("start_time")
-        if start_time is not None and (((end_time - start_time) > datetime.timedelta(hours=24))or
-                                       ((end_time - start_time) < datetime.timedelta(minutes=30))):
+        if start_time is not None and (((end_time - start_time) > timedelta(hours=24))or
+                                       ((end_time - start_time) < timedelta(minutes=30))):
             raise ValueError("A shift must last at least 30 minutes and no more than 24 hours.")
         return end_time
 
 
 class Shift(ShiftBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    # added lambda here when updating to datetime.now(datetime.UTC) to avoid deprecation warnings about datetime.datetime.utcnow(). Using lambda to avoid calling the function right away.
-    created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+    # added lambda here when updating to datetime.now(UTC) to avoid deprecation warnings about datetime.utcnow(). Using lambda to avoid calling the function right away.
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class ShiftCreate(ShiftBase):

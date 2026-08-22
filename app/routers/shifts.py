@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -252,15 +252,15 @@ def list_shifts(
         statement = statement.where(Shift.worker_id == worker_id)
     if start_after is not None:
         if start_after.tzinfo is None:
-            start_after = start_after.replace(tzinfo=timezone.utc)
+            start_after = start_after.replace(tzinfo=UTC)
         else:
-            start_after = start_after.astimezone(timezone.utc)
+            start_after = start_after.astimezone(UTC)
         statement = statement.where(Shift.start_time >= start_after)
     if end_before is not None:
         if end_before.tzinfo is None:
-            end_before = end_before.replace(tzinfo=timezone.utc)
+            end_before = end_before.replace(tzinfo=UTC)
         else:
-            end_before = end_before.astimezone(timezone.utc)
+            end_before = end_before.astimezone(UTC)
         statement = statement.where(Shift.start_time <= end_before)
 
     sort_column = {
@@ -294,7 +294,7 @@ def list_today_shifts(
     already filter. A shift that started yesterday and runs past midnight into
     today is not included since its start_time falls on the previous day
     """
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
     statement = select(Shift).where(Shift.start_time < tomorrow, Shift.start_time >= today)

@@ -1,7 +1,6 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from fastapi.testclient import TestClient
-
 
 
 def _create_shift(client: TestClient, worker_id: int, start: str, end: str):
@@ -129,7 +128,7 @@ def test_list_upcoming_shifts_unfiltered(client: TestClient):
     # Create a shift starting in 10 minutes and one starting in 8 hours for 3 different workers
     for i in range(3):
         worker = client.post("/workers", json={"name": f"Worker {i}", "role": "Role"}).json()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _create_shift(
             client,
             worker["id"],
@@ -156,7 +155,7 @@ def test_list_upcoming_shifts_filtered_by_worker(client: TestClient, worker_id: 
         worker = client.post("/workers", json={"name": f"Worker {i}", "role": "Role"}).json()
         if i == 1:
             target_worker_id = worker["id"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _create_shift(
             client,
             worker["id"],

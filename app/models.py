@@ -115,7 +115,7 @@ class ShiftBase(SQLModel):
 class Shift(ShiftBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # added lambda here when updating to datetime.now(UTC) to avoid deprecation warnings about datetime.utcnow(). Using lambda to avoid calling the function right away.
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))  # TODO: This is not working, no timezone
 
 
 class ShiftCreate(ShiftBase):

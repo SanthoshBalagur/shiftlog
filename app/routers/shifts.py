@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,11 +10,13 @@ from app.conflicts import find_conflicting_shifts
 from app.database import get_session
 from app.models import (
     BulkShiftResponse,
+    DeleteBulkShiftResponse,
     RejectedShift,
     Shift,
     ShiftConflictGroup,
     ShiftCreate,
     ShiftRead,
+    ShiftUpdate,
     Worker,
 )
 from app.rate_limiter import limiter
@@ -65,8 +67,74 @@ def create_shift(
     return db_shift
 
 
+@router.put("/{shift_id}", response_model=ShiftRead)
+def update_shift(
+    shift_id: int,
+    shift_data: ShiftUpdate,
+    session: Session = Depends(get_session)
+):
+    """
+    PUT request:
+    Update an existing shift record by its ID.
+    -----------
+    - **shift_id**: integer ID of the shift to update
+    - **worker_id**: integer ID of the worker assigned
+    - **start_time**: datetime string (ISO format)
+    - **end_time**: datetime string (ISO format)
+    -----------
+    Returns the updated shift object.
+    Throws:
+    - 404 if shift_id is not found
+    - 404 if worker_id is not found
+    - 409 if shift conflicts with an existing shift for the worker
+    """
+    # 1. Fetch existing shift record
+    db_shift = session.get(Shift, shift_id)
+    if db_shift is None:
+        raise HTTPException(status_code=404, detail="Shift not found")
+
+    # 2. Verify worker exists and is active
+    worker = session.get(Worker, shift_data.worker_id)
+    if worker is None:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    if not worker.active:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot schedule a shift for an inactive worker",
+        )
+
+    # 3. Check for shift conflicts (excluding the shift currently being updated!)
+    conflicts = find_conflicting_shifts(
+        session,
+        shift_data.worker_id,
+        shift_data.start_time,
+        shift_data.end_time,
+        exclude_shift_id=shift_id,
+    )
+    if conflicts:
+        conflict_ids = ", ".join(str(c.id) for c in conflicts)
+        raise HTTPException(
+            status_code=409,
+            detail=f"Shift conflicts with existing shift(s) for this worker: {conflict_ids}",
+        )
+
+    # 4. Update attributes
+    db_shift.worker_id = shift_data.worker_id
+    db_shift.start_time = shift_data.start_time
+    db_shift.end_time = shift_data.end_time
+    db_shift.notes = shift_data.notes
+
+    session.add(db_shift)
+    session.commit()
+    session.refresh(db_shift)
+    return db_shift
 @router.post("/bulk", response_model=BulkShiftResponse, status_code=201)
-def create_shifts_bulk(shifts: list[ShiftCreate], session: Session = Depends(get_session)):
+@limiter.limit("10/30seconds")
+def create_shifts_bulk(
+    request: Request,
+    shifts: list[ShiftCreate], 
+    session: Session = Depends(get_session)
+):
     """
     POST request:
     ---
@@ -77,9 +145,19 @@ def create_shifts_bulk(shifts: list[ShiftCreate], session: Session = Depends(get
     - **End time**
     - **Worker ID**
     ---
+    Maximum 10 shifts allowed per bulk request (throws 400 if exceeded).
+    Rate limited to 10 requests per 30 seconds.
+    ---
     If any worker ID does not exist, an error will be thrown.
     If any shift conflicts with existing shifts for the same worker, an error will be thrown.
     """
+    
+    if len(shifts) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk shift creation limit exceeded. Maximum 10 shifts allowed per request.",
+        )
+    
     db_shifts = []
     rejected_shifts = []
     for shift in shifts:
@@ -115,6 +193,41 @@ def create_shifts_bulk(shifts: list[ShiftCreate], session: Session = Depends(get
     return BulkShiftResponse(
         accepted_shifts=[ShiftRead.model_validate(s) for s in db_shifts],
         rejected_shifts=rejected_shifts,
+    )
+
+@router.delete("/bulk", response_model=DeleteBulkShiftResponse, status_code=200)
+@limiter.limit("10/30seconds")
+def delete_shifts_bulk(request: Request, shift_ids: list[int], session: Session = Depends(get_session)):
+    '''
+    Endpoint accepts a list of IDs,
+    loops through them, check which ones are valid and which ones 
+    do not exist or are invalid.
+    IDs that do not exist are collected in a list,
+    and IDs that exist are collected in another list
+    and deleted.
+    it returns both lists
+    '''
+    if len(shift_ids) > 10:
+        raise HTTPException(
+            status_code=400,
+            detail="Bulk shift deletion limit exceeded. Maximum 10 shifts allowed per request.",
+    )
+    not_found_ids=[]
+    deleted_ids=[]
+    for shift_id in shift_ids:
+        shift = session.get(Shift, shift_id)
+        if shift is None:
+            not_found_ids.append(shift_id)
+            continue
+
+        deleted_ids.append(shift_id)
+        session.delete(shift)
+
+    session.commit()
+
+    return DeleteBulkShiftResponse(
+        not_found_ids=not_found_ids,
+        deleted_ids=deleted_ids
     )
 
 
@@ -180,7 +293,7 @@ def list_today_shifts(
     already filter. A shift that started yesterday and runs past midnight into
     today is not included since its start_time falls on the previous day
     """
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     tomorrow = today + timedelta(days=1)
 
     statement = select(Shift).where(Shift.start_time < tomorrow, Shift.start_time >= today)

@@ -47,6 +47,14 @@ class WorkerBase(SQLModel):
     active: bool = Field(default=True, description="Indicates whether the worker is active or not")
     pay: Optional[float] = Field(default=None, description="Hourly pay of the worker")
 
+    @field_validator("name")
+    @classmethod
+    def name_length(cls, name):
+        name=" ".join(name.split())
+        if (len(name) == 0):
+            raise ValueError('Name cannot be empty after removing whitespaces.')
+        return name
+
     @field_validator("pay")
     @classmethod
     def pay_is_positive(cls, pay: float, info):
@@ -111,6 +119,7 @@ class Shift(ShiftBase, table=True):
     created_at: datetime = Field(default_factory=utc_now, sa_type=UtcDateTime)
 
 
+
 class ShiftCreate(ShiftBase):
     pass
 
@@ -131,10 +140,13 @@ class ShiftConflictGroup(SQLModel):
     conflicting_shifts: list[ShiftRead]
 
 
+class ShiftUpdate(ShiftBase):
+    pass
 class WorkerSummary(SQLModel):
     worker_id: int
     total_hours: float
     shift_count: int
+    average_shift_hours: float
 
 
 class OrgHoursSummary(SQLModel):
@@ -151,3 +163,7 @@ class RejectedShift(SQLModel):
 class BulkShiftResponse(SQLModel):
     accepted_shifts: list[ShiftRead]
     rejected_shifts: list[RejectedShift]
+
+class DeleteBulkShiftResponse(SQLModel):
+    deleted_ids: list[int]
+    not_found_ids: list[int]
